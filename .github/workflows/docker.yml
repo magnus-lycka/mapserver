@@ -21,7 +21,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/minetest-mapserver/mapserver
+          images: ghcr.io/${{ github.repository_owner }}/mapserver
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
