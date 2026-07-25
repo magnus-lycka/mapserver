@@ -2,12 +2,16 @@ package tilerendererjob
 
 import (
 	"mapserver/app"
+	"mapserver/db"
 	"mapserver/settings"
 )
 
 func Job(ctx *app.App) {
-	lastMtime := ctx.Settings.GetInt64(settings.SETTING_LAST_MTIME, 0)
-	if lastMtime == 0 {
+	cursor, err := loadIncrementalCursor(ctx.Settings)
+	if err != nil {
+		panic(err)
+	}
+	if cursor.Mtime == 0 {
 		//mark db time as last incremental render point
 		lastMtime, err := ctx.Blockdb.GetTimestamp()
 
@@ -15,7 +19,10 @@ func Job(ctx *app.App) {
 			panic(err)
 		}
 
-		ctx.Settings.SetInt64(settings.SETTING_LAST_MTIME, lastMtime)
+		cursor = db.NewIncrementalCursor(lastMtime, nil)
+		if err := saveIncrementalCursor(ctx.Settings, cursor); err != nil {
+			panic(err)
+		}
 	}
 
 	if ctx.Config.EnableInitialRendering {
@@ -24,7 +31,7 @@ func Job(ctx *app.App) {
 		}
 	}
 
-	incrementalRender(ctx)
+	incrementalRender(ctx, cursor)
 
 	panic("render job interrupted!")
 

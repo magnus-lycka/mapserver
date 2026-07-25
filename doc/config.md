@@ -42,6 +42,7 @@ The mapserver will generate a fresh `mapserver.json` if there is none at startup
 	"renderingjobs": 2,
 	"renderingqueue": 100,
 	"incrementalrenderingtimer": "5s",
+	"incrementalrenderingsafetylag": "5s",
 	"mapobjects": {
 		"bones": true,
 		"protector": true,
@@ -115,6 +116,24 @@ Faster system can use the default (10'000)
 
 #### incrementalrenderingtimer
 Duration to let pass between incremental rendering executions.
+
+#### incrementalrenderingsafetylag
+
+How long incremental rendering waits before finalizing recent database
+timestamps. The default is `5s` and the value must be greater than zero. This
+protects SQLite and PostgreSQL installations where Mapserver cannot see every
+writer transaction from rows that become visible after their `mtime` has
+otherwise been passed.
+
+PostgreSQL additionally caps the watermark below the oldest visible writer
+transaction. The startup log reports whether all-transaction visibility,
+same-role visibility plus the time lag, or the time-lag-only fallback is in
+use. Increase the lag if world-save transactions can run longer than the
+configured value. Larger values add the same amount of map-update latency.
+The default is based on a measured maximum PostgreSQL write-transaction age of
+238 ms during a large Marduk1 emerge operation; 5 seconds leaves more than a
+20-fold margin for that measured workload. SQLite operators should increase
+the value if their world-save transactions can run longer.
 
 #### enableprometheus
 Enables the [Prometheus](./prometheus.md) metrics endpoint

@@ -5,6 +5,7 @@ import (
 	"embed"
 	"mapserver/db"
 	"mapserver/types"
+	"sync"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -12,7 +13,10 @@ import (
 )
 
 type PostgresAccessor struct {
-	db *sql.DB
+	db                     *sql.DB
+	watermarkWarningLock   sync.Mutex
+	watermarkWarningActive bool
+	lastWatermarkWarning   time.Time
 }
 
 //go:embed migrations/*.sql
@@ -51,31 +55,117 @@ func convertRows(posx, posy, posz int, data []byte, mtime int64) *db.Block {
 	return &db.Block{Pos: c, Data: data, Mtime: mtime}
 }
 
-func (a *PostgresAccessor) FindBlocksByMtime(gtmtime int64, limit int) ([]*db.Block, error) {
+func (a *PostgresAccessor) FindBlocksByMtime(cursor *db.IncrementalCursor, upperMtime int64, limit int) ([]*db.Block, error) {
 	blocks := make([]*db.Block, 0)
+	if upperMtime < cursor.Mtime || limit <= 0 {
+		return blocks, nil
+	}
+	var x, y, z int
+	if cursor.PositionValid && cursor.Pos != nil {
+		x, y, z = cursor.Pos.X, cursor.Pos.Y, cursor.Pos.Z
+	}
 
-	rows, err := a.db.Query(getBlocksByMtimeQuery, gtmtime, limit)
+	if cursor.PositionValid {
+		rows, err := a.db.Query(
+			getBlocksAtCursorMtimeQuery,
+			cursor.Mtime,
+			x, y, z,
+			limit,
+		)
+		if err != nil {
+			return nil, err
+		}
+		blocks, err = appendBlocks(rows, blocks)
+		rows.Close()
+		if err != nil || len(blocks) == limit {
+			return blocks, err
+		}
+	}
+
+	rows, err := a.db.Query(getBlocksByMtimeQuery, upperMtime, cursor.Mtime, limit-len(blocks))
 	if err != nil {
 		return nil, err
 	}
-
 	defer rows.Close()
+	return appendBlocks(rows, blocks)
+}
 
+func appendBlocks(rows *sql.Rows, blocks []*db.Block) ([]*db.Block, error) {
 	for rows.Next() {
 		var posx, posy, posz int
 		var data []byte
 		var mtime int64
-
-		err = rows.Scan(&posx, &posy, &posz, &data, &mtime)
-		if err != nil {
+		if err := rows.Scan(&posx, &posy, &posz, &data, &mtime); err != nil {
 			return nil, err
 		}
+		blocks = append(blocks, convertRows(posx, posy, posz, data, mtime))
+	}
+	return blocks, rows.Err()
+}
 
-		mb := convertRows(posx, posy, posz, data, mtime)
-		blocks = append(blocks, mb)
+func (a *PostgresAccessor) GetIncrementalWatermark(safetyLag time.Duration) (*db.IncrementalWatermark, error) {
+	row := a.db.QueryRow(getIncrementalWatermarkQuery)
+	var nowMtime int64
+	var oldestSameRole, oldestAll sql.NullInt64
+	var hasReadAllStats bool
+	if err := row.Scan(&nowMtime, &oldestSameRole, &oldestAll, &hasReadAllStats); err != nil {
+		return nil, err
 	}
 
-	return blocks, nil
+	lagMillis := safetyLag.Milliseconds()
+	if safetyLag > 0 && lagMillis == 0 {
+		lagMillis = 1
+	}
+
+	watermark := &db.IncrementalWatermark{
+		UpperMtime: nowMtime - lagMillis,
+		Mode:       "time-lag",
+	}
+
+	oldest := oldestSameRole
+	if hasReadAllStats {
+		oldest = oldestAll
+		watermark.Mode = "time-lag+all-visible-xact-start"
+	} else if oldestSameRole.Valid {
+		watermark.Mode = "time-lag+same-role-xact-start"
+	}
+
+	if oldest.Valid && oldest.Int64-1 < watermark.UpperMtime {
+		watermark.UpperMtime = oldest.Int64 - 1
+	}
+	a.warnIfWatermarkStalled(nowMtime, lagMillis, watermark, oldest)
+
+	return watermark, nil
+}
+
+func (a *PostgresAccessor) warnIfWatermarkStalled(nowMtime, lagMillis int64, watermark *db.IncrementalWatermark, oldest sql.NullInt64) {
+	const warningThreshold = int64((30 * time.Second) / time.Millisecond)
+	const warningInterval = 5 * time.Minute
+
+	stalled := oldest.Valid && nowMtime-watermark.UpperMtime > lagMillis+warningThreshold
+	a.watermarkWarningLock.Lock()
+	defer a.watermarkWarningLock.Unlock()
+
+	if !stalled {
+		if a.watermarkWarningActive {
+			log.Info("Incremental watermark is advancing normally again")
+		}
+		a.watermarkWarningActive = false
+		return
+	}
+
+	now := time.Now()
+	if !a.watermarkWarningActive || now.Sub(a.lastWatermarkWarning) >= warningInterval {
+		log.WithFields(logrus.Fields{
+			"holdback":    time.Duration(nowMtime-watermark.UpperMtime) * time.Millisecond,
+			"oldestXact":  oldest.Int64,
+			"safetyLag":   time.Duration(lagMillis) * time.Millisecond,
+			"watermark":   watermark.UpperMtime,
+			"warningMode": watermark.Mode,
+		}).Warn("Long-running transaction is holding back incremental rendering")
+		a.lastWatermarkWarning = now
+	}
+	a.watermarkWarningActive = true
 }
 
 func (a *PostgresAccessor) CountBlocks(frommtime, tomtime int64) (int, error) {

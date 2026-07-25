@@ -2,7 +2,7 @@ package tilerendererjob
 
 import (
 	"mapserver/app"
-	"mapserver/settings"
+	"mapserver/db"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -12,43 +12,69 @@ type IncrementalRenderEvent struct {
 	LastMtime int64 `json:"lastmtime"`
 }
 
-func incrementalRender(ctx *app.App) {
-
-	lastMtime := ctx.Settings.GetInt64(settings.SETTING_LAST_MTIME, 0)
+func incrementalRender(ctx *app.App, cursor *db.IncrementalCursor) {
+	safetyLag, err := time.ParseDuration(ctx.Config.IncrementalRenderingSafetyLag)
+	if err != nil {
+		panic(err)
+	}
+	renderingDuration, err := time.ParseDuration(ctx.Config.IncrementalRenderingTimer)
+	if err != nil {
+		panic(err)
+	}
 
 	fields := logrus.Fields{
-		"LastMtime": lastMtime,
+		"cursor":    cursor,
+		"safetyLag": safetyLag,
 	}
 	logrus.WithFields(fields).Info("Starting incremental rendering job")
+	watermarkMode := ""
 
-	for true {
+	for {
 		start := time.Now()
+		watermark, err := ctx.Blockdb.GetIncrementalWatermark(safetyLag)
+		if err != nil {
+			panic(err)
+		}
+		if watermark.Mode != watermarkMode {
+			watermarkMode = watermark.Mode
+			logrus.WithFields(logrus.Fields{
+				"mode":       watermark.Mode,
+				"safetyLag":  safetyLag,
+				"upperMtime": watermark.UpperMtime,
+			}).Info("Incremental watermark mode")
+		}
 
-		result, err := ctx.MapBlockAccessor.FindMapBlocksByMtime(lastMtime, ctx.Config.RenderingFetchLimit, ctx.Config.Layers)
+		result, err := ctx.MapBlockAccessor.FindMapBlocksByMtime(
+			cursor,
+			watermark.UpperMtime,
+			ctx.Config.RenderingFetchLimit,
+			ctx.Config.Layers,
+		)
 
 		if err != nil {
 			panic(err)
 		}
 
-		if len(result.List) == 0 && !result.HasMore {
-			renderingDuration, err := time.ParseDuration(ctx.Config.IncrementalRenderingTimer)
-			if err != nil {
-				panic(err)
-			}
+		if result.UnfilteredCount == 0 {
 			time.Sleep(renderingDuration)
 			continue
 		}
 
-		tiles := renderMapblocks(ctx, result.List)
+		tiles := 0
+		if len(result.List) > 0 {
+			tiles = renderMapblocks(ctx, result.List)
+		}
 
-		lastMtime = result.LastMtime
-		ctx.Settings.SetInt64(settings.SETTING_LAST_MTIME, lastMtime)
+		cursor = result.LastCursor
+		if err := saveIncrementalCursor(ctx.Settings, cursor); err != nil {
+			panic(err)
+		}
 
 		t := time.Now()
 		elapsed := t.Sub(start)
 
 		ev := IncrementalRenderEvent{
-			LastMtime: result.LastMtime,
+			LastMtime: cursor.Mtime,
 		}
 
 		ctx.WebEventbus.Emit("incremental-render-progress", &ev)
@@ -57,7 +83,7 @@ func incrementalRender(ctx *app.App) {
 			"mapblocks": len(result.List),
 			"tiles":     tiles,
 			"elapsed":   elapsed,
-			"lastMtime": result.LastMtime,
+			"lastMtime": cursor.Mtime,
 		}
 		logrus.WithFields(fields).Info("incremental rendering")
 	}

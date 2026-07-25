@@ -1,6 +1,7 @@
 package mapblockaccessor
 
 import (
+	"mapserver/db"
 	"mapserver/eventbus"
 	"mapserver/types"
 
@@ -11,23 +12,22 @@ import (
 )
 
 type FindMapBlocksByMtimeResult struct {
-	HasMore         bool
-	LastPos         *types.MapBlockCoords
-	LastMtime       int64
+	LastCursor      *db.IncrementalCursor
 	List            []*types.ParsedMapblock
 	UnfilteredCount int
 }
 
-func (a *MapBlockAccessor) FindMapBlocksByMtime(lastmtime int64, limit int, layerfilter []*types.Layer) (*FindMapBlocksByMtimeResult, error) {
+func (a *MapBlockAccessor) FindMapBlocksByMtime(cursor *db.IncrementalCursor, upperMtime int64, limit int, layerfilter []*types.Layer) (*FindMapBlocksByMtimeResult, error) {
 
 	fields := logrus.Fields{
-		"lastmtime": lastmtime,
-		"limit":     limit,
+		"cursor":     cursor,
+		"upperMtime": upperMtime,
+		"limit":      limit,
 	}
 	logrus.WithFields(fields).Debug("FindMapBlocksByMtime")
 
 	timer := prometheus.NewTimer(dbGetMtimeDuration)
-	blocks, err := a.accessor.FindBlocksByMtime(lastmtime, limit)
+	blocks, err := a.accessor.FindBlocksByMtime(cursor, upperMtime, limit)
 	timer.ObserveDuration()
 
 	changedBlockCount.Add(float64(len(blocks)))
@@ -39,16 +39,16 @@ func (a *MapBlockAccessor) FindMapBlocksByMtime(lastmtime int64, limit int, laye
 	result := FindMapBlocksByMtimeResult{}
 
 	mblist := make([]*types.ParsedMapblock, 0)
-	var newlastpos *types.MapBlockCoords
-	result.HasMore = len(blocks) == limit
 	result.UnfilteredCount = len(blocks)
+	if len(blocks) > 0 {
+		lastBlock := blocks[len(blocks)-1]
+		result.LastCursor = db.NewIncrementalCursor(
+			lastBlock.Mtime,
+			types.NewMapBlockCoords(lastBlock.Pos.X, lastBlock.Pos.Y, lastBlock.Pos.Z),
+		)
+	}
 
 	for _, block := range blocks {
-		newlastpos = block.Pos
-		if result.LastMtime < block.Mtime {
-			result.LastMtime = block.Mtime
-		}
-
 		currentLayer := types.FindLayerByY(layerfilter, block.Pos.Y)
 
 		if currentLayer == nil {
@@ -84,7 +84,6 @@ func (a *MapBlockAccessor) FindMapBlocksByMtime(lastmtime int64, limit int, laye
 
 	}
 
-	result.LastPos = newlastpos
 	result.List = mblist
 
 	return &result, nil

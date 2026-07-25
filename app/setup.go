@@ -32,6 +32,10 @@ func Setup(p params.ParamsType, cfg *Config) *App {
 	a.Config = cfg
 	a.WebEventbus = eventbus.New()
 
+	if err := validateRenderingDurations(cfg); err != nil {
+		panic(err)
+	}
+
 	//Parse world config
 	a.Worldconfig = worldconfig.Parse(filepath.Join(a.Config.WorldPath, "world.mt"))
 	logrus.WithFields(logrus.Fields{"version": Version}).Info("Starting mapserver")
@@ -168,4 +172,16 @@ func Setup(p params.ParamsType, cfg *Config) *App {
 	a.MediaRepo = repo
 
 	return &a
+}
+
+func validateRenderingDurations(cfg *Config) error {
+	incrementalTimer, err := time.ParseDuration(cfg.IncrementalRenderingTimer)
+	if err != nil || incrementalTimer <= 0 {
+		return errors.New("invalid incrementalrenderingtimer: " + cfg.IncrementalRenderingTimer)
+	}
+	incrementalSafetyLag, err := time.ParseDuration(cfg.IncrementalRenderingSafetyLag)
+	if err != nil || incrementalSafetyLag <= 0 {
+		return errors.New("invalid incrementalrenderingsafetylag: " + cfg.IncrementalRenderingSafetyLag)
+	}
+	return nil
 }

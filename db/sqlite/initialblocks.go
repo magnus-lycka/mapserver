@@ -10,34 +10,25 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const (
-	SETTING_LAST_POS               = "last_pos"
-	SETTING_TOTAL_LEGACY_COUNT     = "total_legacy_count"
-	SETTING_PROCESSED_LEGACY_COUNT = "total_processed_legacy_count"
-
-	SETTING_LAST_LAYER   = "last_layer"
-	SETTING_LAST_X_BLOCK = "last_x_block"
-	SETTING_LAST_Y_BLOCK = "last_y_block"
-)
-
 func (a *Sqlite3Accessor) FindNextInitialBlocks(s settings.Settings, layers []*types.Layer, limit int) (*db.InitialBlocksResult, error) {
 	if a.legacy_pos {
 		result := &db.InitialBlocksResult{}
 
 		blocks := make([]*db.Block, 0)
-		lastpos := s.GetInt64(SETTING_LAST_POS, coords.MinPlainCoord-1)
+		lastpos := s.GetInt64(settings.SETTING_LAST_POS, coords.MinPlainCoord-1)
 
-		processedcount := s.GetInt64(SETTING_PROCESSED_LEGACY_COUNT, 0)
-		totallegacycount := s.GetInt64(SETTING_TOTAL_LEGACY_COUNT, -1)
+		processedcount := s.GetInt64(settings.SETTING_PROCESSED_LEGACY_COUNT, 0)
+		totallegacycount := s.GetInt64(settings.SETTING_TOTAL_LEGACY_COUNT, -1)
 		if totallegacycount == -1 {
 			//Query from db
-			totallegacycount, err := a.CountBlocks()
+			count, err := a.CountBlocks()
 
 			if err != nil {
 				panic(err)
 			}
+			totallegacycount = int64(count)
 
-			s.SetInt64(SETTING_TOTAL_LEGACY_COUNT, int64(totallegacycount))
+			s.SetInt64(settings.SETTING_TOTAL_LEGACY_COUNT, int64(totallegacycount))
 		}
 
 		rows, err := a.db.Query(getLastBlockQueryLegacy, lastpos, limit)
@@ -77,20 +68,20 @@ func (a *Sqlite3Accessor) FindNextInitialBlocks(s settings.Settings, layers []*t
 			}
 		}
 
-		s.SetInt64(SETTING_PROCESSED_LEGACY_COUNT, int64(result.UnfilteredCount)+processedcount)
+		s.SetInt64(settings.SETTING_PROCESSED_LEGACY_COUNT, int64(result.UnfilteredCount)+processedcount)
 
 		result.Progress = float64(processedcount) / float64(totallegacycount)
 		result.List = blocks
 
 		//Save current positions of initial run
-		s.SetInt64(SETTING_LAST_POS, lastpos)
+		s.SetInt64(settings.SETTING_LAST_POS, lastpos)
 
 		return result, nil
 	} else {
 
-		lastlayer := s.GetInt(SETTING_LAST_LAYER, 0)
-		lastxblock := s.GetInt(SETTING_LAST_X_BLOCK, -129)
-		lastyblock := s.GetInt(SETTING_LAST_Y_BLOCK, -128)
+		lastlayer := s.GetInt(settings.SETTING_LAST_LAYER, 0)
+		lastxblock := s.GetInt(settings.SETTING_LAST_X_BLOCK, -129)
+		lastyblock := s.GetInt(settings.SETTING_LAST_Y_BLOCK, -128)
 
 		if lastxblock >= 128 {
 			lastxblock = -128
@@ -111,9 +102,9 @@ func (a *Sqlite3Accessor) FindNextInitialBlocks(s settings.Settings, layers []*t
 				}
 			}
 
-			s.SetInt(SETTING_LAST_LAYER, nextlayer)
-			s.SetInt(SETTING_LAST_X_BLOCK, -129)
-			s.SetInt(SETTING_LAST_Y_BLOCK, -128)
+			s.SetInt(settings.SETTING_LAST_LAYER, nextlayer)
+			s.SetInt(settings.SETTING_LAST_X_BLOCK, -129)
+			s.SetInt(settings.SETTING_LAST_Y_BLOCK, -128)
 
 			result := &db.InitialBlocksResult{}
 			result.HasMore = nextlayer != lastlayer
@@ -161,9 +152,9 @@ func (a *Sqlite3Accessor) FindNextInitialBlocks(s settings.Settings, layers []*t
 				}
 				log.WithFields(fields).Debug("Skipping stride")
 
-				s.SetInt(SETTING_LAST_LAYER, lastlayer)
-				s.SetInt(SETTING_LAST_X_BLOCK, -129)
-				s.SetInt(SETTING_LAST_Y_BLOCK, lastyblock+1)
+				s.SetInt(settings.SETTING_LAST_LAYER, lastlayer)
+				s.SetInt(settings.SETTING_LAST_X_BLOCK, -129)
+				s.SetInt(settings.SETTING_LAST_Y_BLOCK, lastyblock+1)
 
 				result := &db.InitialBlocksResult{}
 				result.Progress = float64(((lastyblock+128)*256)+(lastxblock+128)) / float64(256*256)
@@ -199,9 +190,9 @@ func (a *Sqlite3Accessor) FindNextInitialBlocks(s settings.Settings, layers []*t
 			blocks = append(blocks, mb)
 		}
 
-		s.SetInt(SETTING_LAST_LAYER, lastlayer)
-		s.SetInt(SETTING_LAST_X_BLOCK, lastxblock)
-		s.SetInt(SETTING_LAST_Y_BLOCK, lastyblock)
+		s.SetInt(settings.SETTING_LAST_LAYER, lastlayer)
+		s.SetInt(settings.SETTING_LAST_X_BLOCK, lastxblock)
+		s.SetInt(settings.SETTING_LAST_Y_BLOCK, lastyblock)
 
 		result := &db.InitialBlocksResult{}
 		result.LastMtime = lastmtime

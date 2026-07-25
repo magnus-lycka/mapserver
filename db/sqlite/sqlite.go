@@ -84,51 +84,105 @@ func convertRows(pos int64, data []byte, mtime int64) *db.Block {
 	return &db.Block{Pos: c, Data: data, Mtime: mtime}
 }
 
-func (a *Sqlite3Accessor) FindBlocksByMtime(gtmtime int64, limit int) ([]*db.Block, error) {
+func (a *Sqlite3Accessor) FindBlocksByMtime(cursor *db.IncrementalCursor, upperMtime int64, limit int) ([]*db.Block, error) {
 	blocks := make([]*db.Block, 0)
-
-	if a.legacy_pos {
-		rows, err := a.db.Query(getBlocksByMtimeQueryLegacy, gtmtime, limit)
-		if err != nil {
-			return nil, err
-		}
-
-		defer rows.Close()
-
-		for rows.Next() {
-			var pos int64
-			var data []byte
-			var mtime int64
-
-			err = rows.Scan(&pos, &data, &mtime)
-			if err != nil {
-				return nil, err
-			}
-
-			mb := convertRows(pos, data, mtime)
-			blocks = append(blocks, mb)
-		}
-	} else {
-		rows, err := a.db.Query(getBlocksByMtimeQuery, gtmtime, limit)
-		if err != nil {
-			return nil, err
-		}
-
-		defer rows.Close()
-
-		for rows.Next() {
-			mb := &db.Block{Pos: &types.MapBlockCoords{}}
-
-			err = rows.Scan(&mb.Pos.X, &mb.Pos.Y, &mb.Pos.Z, &mb.Data, &mb.Mtime)
-			if err != nil {
-				return nil, err
-			}
-
-			blocks = append(blocks, mb)
-		}
+	if upperMtime < cursor.Mtime || limit <= 0 {
+		return blocks, nil
 	}
 
-	return blocks, nil
+	if a.legacy_pos {
+		var pos int64
+		if cursor.PositionValid && cursor.Pos != nil {
+			pos = coords.CoordToPlain(cursor.Pos)
+		}
+		if cursor.PositionValid {
+			rows, err := a.db.Query(getBlocksAtCursorMtimeQueryLegacy, cursor.Mtime, pos, limit)
+			if err != nil {
+				return nil, err
+			}
+			blocks, err = appendLegacyBlocks(rows, blocks)
+			rows.Close()
+			if err != nil || len(blocks) == limit {
+				return blocks, err
+			}
+		}
+
+		rows, err := a.db.Query(getBlocksByMtimeQueryLegacy, cursor.Mtime, upperMtime, limit-len(blocks))
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		return appendLegacyBlocks(rows, blocks)
+	} else {
+		var x, y, z int
+		if cursor.PositionValid && cursor.Pos != nil {
+			x, y, z = cursor.Pos.X, cursor.Pos.Y, cursor.Pos.Z
+		}
+		if cursor.PositionValid {
+			rows, err := a.db.Query(
+				getBlocksAtCursorMtimeQuery,
+				cursor.Mtime,
+				x, x, y, x, y, z,
+				limit,
+			)
+			if err != nil {
+				return nil, err
+			}
+			blocks, err = appendXYZBlocks(rows, blocks)
+			rows.Close()
+			if err != nil || len(blocks) == limit {
+				return blocks, err
+			}
+		}
+
+		rows, err := a.db.Query(getBlocksByMtimeQuery, cursor.Mtime, upperMtime, limit-len(blocks))
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		return appendXYZBlocks(rows, blocks)
+	}
+}
+
+func appendLegacyBlocks(rows *sql.Rows, blocks []*db.Block) ([]*db.Block, error) {
+	for rows.Next() {
+		var pos int64
+		var data []byte
+		var mtime int64
+		if err := rows.Scan(&pos, &data, &mtime); err != nil {
+			return nil, err
+		}
+		blocks = append(blocks, convertRows(pos, data, mtime))
+	}
+	return blocks, rows.Err()
+}
+
+func appendXYZBlocks(rows *sql.Rows, blocks []*db.Block) ([]*db.Block, error) {
+	for rows.Next() {
+		mb := &db.Block{Pos: &types.MapBlockCoords{}}
+		if err := rows.Scan(&mb.Pos.X, &mb.Pos.Y, &mb.Pos.Z, &mb.Data, &mb.Mtime); err != nil {
+			return nil, err
+		}
+		blocks = append(blocks, mb)
+	}
+	return blocks, rows.Err()
+}
+
+func (a *Sqlite3Accessor) GetIncrementalWatermark(safetyLag time.Duration) (*db.IncrementalWatermark, error) {
+	current, err := a.GetTimestamp()
+	if err != nil {
+		return nil, err
+	}
+
+	lagSeconds := int64((safetyLag + time.Second - 1) / time.Second)
+	if lagSeconds < 1 {
+		lagSeconds = 1
+	}
+
+	return &db.IncrementalWatermark{
+		UpperMtime: current - lagSeconds,
+		Mode:       "closed-second+time-lag",
+	}, nil
 }
 
 func (db *Sqlite3Accessor) CountBlocks() (int, error) {

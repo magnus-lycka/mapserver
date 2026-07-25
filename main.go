@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"mapserver/app"
 	"mapserver/mapobject"
 	"mapserver/params"
+	"mapserver/settings"
 	"mapserver/tilerendererjob"
 	"mapserver/web"
+	"os"
 	"runtime"
 
 	"github.com/sirupsen/logrus"
@@ -65,9 +66,18 @@ func main() {
 	if p.CreateConfig {
 		return
 	}
+	if p.FullRerender && (!cfg.EnableRendering || !cfg.EnableInitialRendering) {
+		panic("-full-rerender requires enablerendering and enableinitialrendering")
+	}
 
 	//setup app context
 	ctx := app.Setup(p, cfg)
+	if p.FullRerender {
+		if err := settings.ResetInitialRender(ctx.Settings, ctx.Config.Layers); err != nil {
+			panic(err)
+		}
+		logrus.WithField("layers", len(ctx.Config.Layers)).Warn("Full rerender requested; initial-render progress reset")
+	}
 
 	//Set up mapobject events
 	mapobject.Setup(ctx)

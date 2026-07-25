@@ -3,6 +3,8 @@
 
 ## Next
 
+* Reliable incremental rendering across timestamp ties and late database commits
+* Configurable incremental-rendering safety lag and a full re-render command
 * Train overlay decluttering
 * Updated builtin colors
 * Hide travelnets and missions by pattern "(P)"

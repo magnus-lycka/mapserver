@@ -3,16 +3,31 @@ package sqlite
 const getBlocksByMtimeQuery = `
 	select x,y,z,data,mtime
 	from blocks b
-	where b.mtime > ?
-	order by b.mtime asc
+	where b.mtime > ? and b.mtime <= ?
+	order by b.mtime asc, b.x asc, b.y asc, b.z asc
+	limit ?
+`
+
+const getBlocksAtCursorMtimeQuery = `
+	select x,y,z,data,mtime from blocks
+	where mtime = ?
+	and (x > ? or (x = ? and y > ?) or (x = ? and y = ? and z > ?))
+	order by x asc, y asc, z asc
 	limit ?
 `
 
 const getBlocksByMtimeQueryLegacy = `
 	select pos,data,mtime
 	from blocks b
-	where b.mtime > ?
-	order by b.mtime asc
+	where b.mtime > ? and b.mtime <= ?
+	order by b.mtime asc, b.pos asc
+	limit ?
+`
+
+const getBlocksAtCursorMtimeQueryLegacy = `
+	select pos,data,mtime from blocks
+	where mtime = ? and pos > ?
+	order by pos asc
 	limit ?
 `
 

@@ -3,6 +3,7 @@ package settings
 import (
 	"io/ioutil"
 	"mapserver/mapobjectdb/sqlite"
+	"mapserver/types"
 	"os"
 	"testing"
 )
@@ -84,4 +85,45 @@ func TestStrings(t *testing.T) {
 		t.Fatal("getbool with default failed")
 	}
 
+}
+
+func TestResetInitialRender(t *testing.T) {
+	tmpfile, err := os.CreateTemp("", "ResetInitialRender.*.sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+	tmpfile.Close()
+
+	db, err := sqlite.New(tmpfile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	s := New(db)
+	layers := []*types.Layer{{Id: 7}, {Id: -3}, {Id: 2}}
+
+	if err := ResetInitialRender(s, layers); err != nil {
+		t.Fatal(err)
+	}
+	if !s.GetBool(SETTING_INITIAL_RUN, false) {
+		t.Fatal("initial run was not enabled")
+	}
+	if got := s.GetInt(SETTING_LAST_LAYER, 0); got != -3 {
+		t.Fatalf("last layer=%d, want -3", got)
+	}
+	if got := s.GetInt(SETTING_LAST_X_BLOCK, 0); got != -129 {
+		t.Fatalf("last x=%d", got)
+	}
+	if got := s.GetInt(SETTING_LAST_Y_BLOCK, 0); got != -128 {
+		t.Fatalf("last y=%d", got)
+	}
+	if got := s.GetInt64(SETTING_TOTAL_LEGACY_COUNT, 0); got != -1 {
+		t.Fatalf("legacy total=%d", got)
+	}
+	if got := s.GetInt64(SETTING_PROCESSED_LEGACY_COUNT, -1); got != 0 {
+		t.Fatalf("legacy processed=%d", got)
+	}
 }

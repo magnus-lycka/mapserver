@@ -31,6 +31,7 @@
 	"renderingjobs": 8,
 	"renderingqueue": 100,
 	"incrementalrenderingtimer": "5s",
+	"incrementalrenderingsafetylag": "5s",
 	"mapobjects": {
 		"areas": true,
 		"bones": true,

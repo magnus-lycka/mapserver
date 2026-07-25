@@ -1,34 +1,13 @@
 
-# Stuck incremental rendering
+# Repairing incomplete rendering
 
-In case the incremental rendering is stuck (a bug between 1.0.1 and 2.0.0)
-NOTE: this is for the mapserver database, NOT the map database!
+To repair historical gaps, use the supported full-rerender operation:
 
-## Sqlite
-
-Execute this command in the sqlite database (`sqlite3 ./mapserver.sqlite`)
-
-```
-update settings
-set value = strftime('%s', 'now')
-where key = 'last_mtime';
+```sh
+./mapserver -full-rerender
 ```
 
-This will reset the current rendering time to now
-
-## Postgres
-
-For postgresql:
-
-Enter the shell (for example):
-```
-psql -U postgres
-```
-
-And reset the current mtime
-```
-update settings
-set value = floor(EXTRACT(EPOCH from now()) * 1000)
-where key = 'last_mtime';
-```
-
+This resets every initial-render progress component and starts from the lowest
+configured layer. It does not delete tiles or reset the incremental cursor.
+Setting only `initial_run=true` or editing `last_mtime` is insufficient and may
+skip layers or conflict with the compound incremental cursor.

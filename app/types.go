@@ -3,30 +3,31 @@ package app
 import "mapserver/types"
 
 type Config struct {
-	ConfigVersion             int                     `json:"configversion"`
-	Port                      int                     `json:"port"`
-	LocalhostOnly             bool                    `json:"localhostonly"`
-	EnablePrometheus          bool                    `json:"enableprometheus"`
-	EnableRendering           bool                    `json:"enablerendering"`
-	EnableSearch              bool                    `json:"enablesearch"`
-	EnableInitialRendering    bool                    `json:"enableinitialrendering"`
-	EnableTransparency        bool                    `json:"enabletransparency"`
-	EnableMediaRepository     bool                    `json:"enablemediarepository"`
-	Webdev                    bool                    `json:"webdev"`
-	WebApi                    *WebApiConfig           `json:"webapi"`
-	Layers                    []*types.Layer          `json:"layers"`
-	RenderingFetchLimit       int                     `json:"renderingfetchlimit"`
-	RenderingJobs             int                     `json:"renderingjobs"`
-	RenderingQueue            int                     `json:"renderingqueue"`
-	IncrementalRenderingTimer string                  `json:"incrementalrenderingtimer"`
-	MapObjects                *MapObjectConfig        `json:"mapobjects"`
-	MapBlockAccessorCfg       *MapBlockAccessorConfig `json:"mapblockaccessor"`
-	DefaultOverlays           []string                `json:"defaultoverlays"`
-	PageName                  string                  `json:"pagename"`
-	Skins                     *SkinsConfig            `json:"skins"`
-	WorldPath                 string                  `json:"worldpath"`
-	DataPath                  string                  `json:"datapath"`
-	ColorsTxtPath             string                  `json:"colorstxtpath"`
+	ConfigVersion                 int                     `json:"configversion"`
+	Port                          int                     `json:"port"`
+	LocalhostOnly                 bool                    `json:"localhostonly"`
+	EnablePrometheus              bool                    `json:"enableprometheus"`
+	EnableRendering               bool                    `json:"enablerendering"`
+	EnableSearch                  bool                    `json:"enablesearch"`
+	EnableInitialRendering        bool                    `json:"enableinitialrendering"`
+	EnableTransparency            bool                    `json:"enabletransparency"`
+	EnableMediaRepository         bool                    `json:"enablemediarepository"`
+	Webdev                        bool                    `json:"webdev"`
+	WebApi                        *WebApiConfig           `json:"webapi"`
+	Layers                        []*types.Layer          `json:"layers"`
+	RenderingFetchLimit           int                     `json:"renderingfetchlimit"`
+	RenderingJobs                 int                     `json:"renderingjobs"`
+	RenderingQueue                int                     `json:"renderingqueue"`
+	IncrementalRenderingTimer     string                  `json:"incrementalrenderingtimer"`
+	IncrementalRenderingSafetyLag string                  `json:"incrementalrenderingsafetylag"`
+	MapObjects                    *MapObjectConfig        `json:"mapobjects"`
+	MapBlockAccessorCfg           *MapBlockAccessorConfig `json:"mapblockaccessor"`
+	DefaultOverlays               []string                `json:"defaultoverlays"`
+	PageName                      string                  `json:"pagename"`
+	Skins                         *SkinsConfig            `json:"skins"`
+	WorldPath                     string                  `json:"worldpath"`
+	DataPath                      string                  `json:"datapath"`
+	ColorsTxtPath                 string                  `json:"colorstxtpath"`
 }
 
 type MapBlockAccessorConfig struct {

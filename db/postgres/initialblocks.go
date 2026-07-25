@@ -10,12 +10,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const (
-	SETTING_LAST_LAYER   = "last_layer"
-	SETTING_LAST_X_BLOCK = "last_x_block"
-	SETTING_LAST_Y_BLOCK = "last_y_block"
-)
-
 func (a *PostgresAccessor) countBlocks(x1, y1, z1, x2, y2, z2 int) (int, error) {
 	rows, err := a.db.Query(getBlockCountByInitialTileQuery,
 		x1, y1, z1, x2, y2, z2,
@@ -55,9 +49,9 @@ func (a *PostgresAccessor) countBlocks(x1, y1, z1, x2, y2, z2 int) (int, error) 
 
 func (a *PostgresAccessor) FindNextInitialBlocks(s settings.Settings, layers []*types.Layer, limit int) (*db.InitialBlocksResult, error) {
 
-	lastlayer := s.GetInt(SETTING_LAST_LAYER, 0)
-	lastxblock := s.GetInt(SETTING_LAST_X_BLOCK, -129)
-	lastyblock := s.GetInt(SETTING_LAST_Y_BLOCK, -128)
+	lastlayer := s.GetInt(settings.SETTING_LAST_LAYER, 0)
+	lastxblock := s.GetInt(settings.SETTING_LAST_X_BLOCK, -129)
+	lastyblock := s.GetInt(settings.SETTING_LAST_Y_BLOCK, -128)
 
 	if lastxblock >= 128 {
 		lastxblock = -128
@@ -78,9 +72,9 @@ func (a *PostgresAccessor) FindNextInitialBlocks(s settings.Settings, layers []*
 			}
 		}
 
-		s.SetInt(SETTING_LAST_LAYER, nextlayer)
-		s.SetInt(SETTING_LAST_X_BLOCK, -129)
-		s.SetInt(SETTING_LAST_Y_BLOCK, -128)
+		s.SetInt(settings.SETTING_LAST_LAYER, nextlayer)
+		s.SetInt(settings.SETTING_LAST_X_BLOCK, -129)
+		s.SetInt(settings.SETTING_LAST_Y_BLOCK, -128)
 
 		result := &db.InitialBlocksResult{}
 		result.HasMore = nextlayer != lastlayer
@@ -128,9 +122,9 @@ func (a *PostgresAccessor) FindNextInitialBlocks(s settings.Settings, layers []*
 			}
 			log.WithFields(fields).Debug("Skipping stride")
 
-			s.SetInt(SETTING_LAST_LAYER, lastlayer)
-			s.SetInt(SETTING_LAST_X_BLOCK, -129)
-			s.SetInt(SETTING_LAST_Y_BLOCK, lastyblock+1)
+			s.SetInt(settings.SETTING_LAST_LAYER, lastlayer)
+			s.SetInt(settings.SETTING_LAST_X_BLOCK, -129)
+			s.SetInt(settings.SETTING_LAST_Y_BLOCK, lastyblock+1)
 
 			result := &db.InitialBlocksResult{}
 			result.Progress = float64(((lastyblock+128)*256)+(lastxblock+128)) / float64(256*256)
@@ -179,9 +173,9 @@ func (a *PostgresAccessor) FindNextInitialBlocks(s settings.Settings, layers []*
 		}
 	}
 
-	s.SetInt(SETTING_LAST_LAYER, lastlayer)
-	s.SetInt(SETTING_LAST_X_BLOCK, lastxblock)
-	s.SetInt(SETTING_LAST_Y_BLOCK, lastyblock)
+	s.SetInt(settings.SETTING_LAST_LAYER, lastlayer)
+	s.SetInt(settings.SETTING_LAST_X_BLOCK, lastxblock)
+	s.SetInt(settings.SETTING_LAST_Y_BLOCK, lastyblock)
 
 	result := &db.InitialBlocksResult{}
 	result.LastMtime = lastmtime
