@@ -10,7 +10,13 @@ import (
 
 func (api *Api) GetSkin(resp http.ResponseWriter, req *http.Request) {
 	filename := strings.TrimPrefix(req.URL.Path, "/api/skins/")
-	if !validSkinFilename(filename) {
+	// A skin is one file directly below SkinsPath. Keep these checks here so
+	// static analysis can verify that user input is constrained before ReadFile.
+	if filename == "" ||
+		strings.Contains(filename, "/") ||
+		strings.Contains(filename, `\`) ||
+		strings.Contains(filename, "..") ||
+		!strings.HasSuffix(strings.ToLower(filename), ".png") {
 		resp.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -37,13 +43,4 @@ func (api *Api) GetSkin(resp http.ResponseWriter, req *http.Request) {
 	// fallback
 	resp.WriteHeader(http.StatusNotFound)
 	_, _ = resp.Write([]byte(filename))
-}
-
-func validSkinFilename(filename string) bool {
-	// A skin is one file directly below SkinsPath. Check both separator styles so
-	// the validation remains safe when mapserver is built for another platform.
-	return filename != "" &&
-		!strings.ContainsAny(filename, `/\`) &&
-		filename != "." && filename != ".." &&
-		strings.HasSuffix(strings.ToLower(filename), ".png")
 }

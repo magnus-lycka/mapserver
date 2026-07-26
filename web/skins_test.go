@@ -1,30 +1,64 @@
 package web
 
-import "testing"
+import (
+	"mapserver/app"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+)
 
-func TestValidSkinFilename(t *testing.T) {
-	tests := []struct {
-		name     string
-		filename string
-		want     bool
-	}{
-		{name: "png", filename: "character.png", want: true},
-		{name: "uppercase extension", filename: "character.PNG", want: true},
-		{name: "unicode", filename: "spelare-åäö.png", want: true},
-		{name: "empty", filename: "", want: false},
-		{name: "wrong extension", filename: "character.jpg", want: false},
-		{name: "unix traversal", filename: "../secret.png", want: false},
-		{name: "windows traversal", filename: `..\secret.png`, want: false},
-		{name: "nested path", filename: "subdir/character.png", want: false},
-		{name: "absolute unix path", filename: "/tmp/character.png", want: false},
-		{name: "absolute windows path", filename: `C:\tmp\character.png`, want: false},
+func TestGetSkinRejectsUnsafeFilenames(t *testing.T) {
+	skinsPath := t.TempDir()
+	api := &Api{Context: &app.App{Config: &app.Config{
+		Skins: &app.SkinsConfig{SkinsPath: skinsPath},
+	}}}
+
+	tests := []string{
+		"/api/skins/",
+		"/api/skins/character.jpg",
+		"/api/skins/../secret.png",
+		`/api/skins/..\secret.png`,
+		"/api/skins/subdir/character.png",
+		`/api/skins/C:\tmp\character.png`,
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := validSkinFilename(test.filename); got != test.want {
-				t.Fatalf("validSkinFilename(%q) = %t, want %t", test.filename, got, test.want)
+	for _, requestPath := range tests {
+		t.Run(requestPath, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, requestPath, nil)
+			response := httptest.NewRecorder()
+			api.GetSkin(response, request)
+
+			if response.Code != http.StatusNotFound {
+				t.Fatalf("GetSkin(%q) returned %d, want %d", requestPath, response.Code, http.StatusNotFound)
 			}
 		})
+	}
+}
+
+func TestGetSkinServesPNG(t *testing.T) {
+	skinsPath := t.TempDir()
+	const filename = "spelare-åäö.png"
+	const content = "png content"
+	if err := os.WriteFile(filepath.Join(skinsPath, filename), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	api := &Api{Context: &app.App{Config: &app.Config{
+		Skins: &app.SkinsConfig{SkinsPath: skinsPath},
+	}}}
+	request := httptest.NewRequest(http.MethodGet, "/api/skins/"+filename, nil)
+	response := httptest.NewRecorder()
+	api.GetSkin(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("GetSkin returned %d, want %d", response.Code, http.StatusOK)
+	}
+	if response.Body.String() != content {
+		t.Fatalf("GetSkin returned %q, want %q", response.Body.String(), content)
+	}
+	if got := response.Header().Get("Content-Type"); got != "image/png" {
+		t.Fatalf("GetSkin Content-Type = %q, want image/png", got)
 	}
 }
