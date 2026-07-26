@@ -36,6 +36,11 @@ func (a *MapBlockAccessor) FindMapBlocksByMtime(cursor *db.IncrementalCursor, up
 		return nil, err
 	}
 
+	// Incremental catch-up can consume hundreds of batches per minute. Make
+	// room before parsing the next batch so decoded mapblocks cannot accumulate
+	// far beyond the configured cache limit while the renderer is backlogged.
+	a.prepareCacheForBatch(len(blocks))
+
 	result := FindMapBlocksByMtimeResult{}
 
 	mblist := make([]*types.ParsedMapblock, 0)
@@ -78,8 +83,10 @@ func (a *MapBlockAccessor) FindMapBlocksByMtime(cursor *db.IncrementalCursor, up
 
 		a.Eventbus.Emit(eventbus.MAPBLOCK_RENDERED, types.NewParsedMapblock(mapblock, block.Pos))
 
-		a.blockcache.Set(key, mapblock, cache.DefaultExpiration)
-		cacheBlockCount.Inc()
+		if a.maxcount > 0 {
+			a.blockcache.Set(key, mapblock, cache.DefaultExpiration)
+			cacheBlockCount.Inc()
+		}
 		mblist = append(mblist, types.NewParsedMapblock(mapblock, block.Pos))
 
 	}

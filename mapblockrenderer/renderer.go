@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"mapserver/mapblockaccessor"
 	"mapserver/types"
+	"sync"
 	"time"
 
 	"github.com/minetest-go/colormapping"
@@ -19,14 +20,33 @@ type MapBlockRenderer struct {
 	colors             *cachedColorResolver
 	enableShadow       bool
 	enableTransparency bool
+	imagePool          sync.Pool
 }
 
 func NewMapBlockRenderer(accessor *mapblockaccessor.MapBlockAccessor, colors *colormapping.ColorMapping) *MapBlockRenderer {
-	return &MapBlockRenderer{
+	r := &MapBlockRenderer{
 		accessor:           accessor,
 		colors:             newCachedColorResolver(colors),
 		enableShadow:       true,
 		enableTransparency: false,
+	}
+	r.imagePool.New = func() any {
+		return image.NewNRGBA(image.Rect(0, 0, IMG_SIZE, IMG_SIZE))
+	}
+	return r
+}
+
+func (r *MapBlockRenderer) newImage() *image.NRGBA {
+	img := r.imagePool.Get().(*image.NRGBA)
+	clear(img.Pix)
+	return img
+}
+
+// ReleaseImage returns an image obtained from Render after its pixels have
+// been consumed. Other callers may retain Render results as before.
+func (r *MapBlockRenderer) ReleaseImage(img *image.NRGBA) {
+	if img != nil {
+		r.imagePool.Put(img)
 	}
 }
 
@@ -143,7 +163,7 @@ func (r *MapBlockRenderer) Render(pos1, pos2 *types.MapBlockCoords) (*image.NRGB
 					}
 
 					if img == nil {
-						img = image.NewNRGBA(image.Rect(0, 0, IMG_SIZE, IMG_SIZE))
+						img = r.newImage()
 					}
 
 					// Work on the cached value copy; ColorMapping owns its pointers.

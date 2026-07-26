@@ -4,9 +4,11 @@
 ## Next
 
 * Faster initial rendering by caching node-color resolutions (including misses),
-  retaining the active mapblock batch, avoiding empty-image allocation and
-  discarded PNG encoding, and building the shared low-zoom tile pyramid only
-  once after spatial rendering completes
+  retaining the active mapblock batch, loading unrelated blocks concurrently,
+  reusing render images, avoiding empty-image allocation and discarded PNG
+  encoding, and building the shared low-zoom tile pyramid only once after
+  spatial rendering completes
+* Bound decoded-mapblock memory during incremental backlog processing
 * Reliable incremental rendering across timestamp ties and late database commits
 * Configurable incremental-rendering safety lag and a full re-render command
 * Train overlay decluttering

@@ -3,14 +3,11 @@ package mapblockaccessor
 import (
 	"mapserver/eventbus"
 	"mapserver/types"
-	"sync"
 
 	"github.com/minetest-go/mapparser"
 	cache "github.com/patrickmn/go-cache"
 	"github.com/prometheus/client_golang/prometheus"
 )
-
-var lock = &sync.RWMutex{}
 
 func (a *MapBlockAccessor) GetMapBlock(pos *types.MapBlockCoords) (*mapparser.MapBlock, error) {
 	cache_enabled := a.maxcount > 0
@@ -22,13 +19,8 @@ func (a *MapBlockAccessor) GetMapBlock(pos *types.MapBlockCoords) (*mapparser.Ma
 		// Batch loading makes room before inserting its working set.
 		cacheBlocks.Set(float64(a.blockcache.ItemCount()))
 
-		//read section
-		lock.RLock()
-
 		cachedblock, found := a.blockcache.Get(key)
 		if found {
-			defer lock.RUnlock()
-
 			getCacheHitCount.Inc()
 			if cachedblock == nil {
 				return nil, nil
@@ -37,15 +29,14 @@ func (a *MapBlockAccessor) GetMapBlock(pos *types.MapBlockCoords) (*mapparser.Ma
 			}
 		}
 
-		//end read
-		lock.RUnlock()
-
 		timer := prometheus.NewTimer(dbGetDuration)
 		defer timer.ObserveDuration()
 
-		//write section
-		lock.Lock()
-		defer lock.Unlock()
+		// Only duplicate loads of the same (or rarely hash-colliding) coordinate
+		// need to wait. Unrelated blocks may use the DB and parser concurrently.
+		loadLock := a.loadLock(pos)
+		loadLock.Lock()
+		defer loadLock.Unlock()
 
 		//try read
 		cachedblock, found = a.blockcache.Get(key)

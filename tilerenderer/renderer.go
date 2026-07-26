@@ -13,6 +13,7 @@ import (
 	"mapserver/tiledb"
 	"mapserver/types"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,6 +26,7 @@ type TileRenderer struct {
 	tdb              *tiledb.TileDB
 	dba              db.DBAccessor
 	Eventbus         *eventbus.Eventbus
+	imagePool        sync.Pool
 }
 
 func resizeImage(src *image.NRGBA, tgt *image.NRGBA, xoffset int, yoffset int) {
@@ -59,13 +61,34 @@ func NewTileRenderer(mapblockrenderer *mapblockrenderer.MapBlockRenderer,
 	dba db.DBAccessor,
 	layers []*types.Layer) *TileRenderer {
 
-	return &TileRenderer{
+	tr := &TileRenderer{
 		mapblockrenderer: mapblockrenderer,
 		layers:           layers,
 		tdb:              tdb,
 		dba:              dba,
 		Eventbus:         eventbus.New(),
 	}
+	tr.imagePool.New = func() any {
+		return image.NewNRGBA(image.Rect(0, 0, IMG_SIZE, IMG_SIZE))
+	}
+	return tr
+}
+
+func (tr *TileRenderer) newImage() *image.NRGBA {
+	img := tr.imagePool.Get().(*image.NRGBA)
+	clear(img.Pix)
+	return img
+}
+
+func (tr *TileRenderer) releaseImage(tc *coords.TileCoords, img *image.NRGBA) {
+	if img == nil {
+		return
+	}
+	if tc.Zoom == 13 {
+		tr.mapblockrenderer.ReleaseImage(img)
+		return
+	}
+	tr.imagePool.Put(img)
 }
 
 const (
@@ -75,7 +98,8 @@ const (
 
 func (tr *TileRenderer) Render(tc *coords.TileCoords) error {
 	//No tile in db
-	_, err := tr.renderImage(tc, 2)
+	img, err := tr.renderImage(tc, 2)
+	tr.releaseImage(tc, img)
 
 	if err != nil {
 		return err
@@ -104,7 +128,7 @@ func (tr *TileRenderer) renderImage(tc *coords.TileCoords, recursionDepth int) (
 				image.Point{IMG_SIZE, IMG_SIZE},
 			}
 
-			img := image.NewNRGBA(rect)
+			img := tr.newImage()
 			draw.Draw(img, rect, cachedimg, image.ZP, draw.Src)
 
 			log.WithFields(logrus.Fields{"x": tc.X, "y": tc.Y, "zoom": tc.Zoom}).Debug("Cached image")
@@ -197,17 +221,16 @@ func (tr *TileRenderer) renderImage(tc *coords.TileCoords, recursionDepth int) (
 	quadrender := t.Sub(start)
 	start = t
 
-	img := image.NewNRGBA(
-		image.Rectangle{
-			image.Point{0, 0},
-			image.Point{IMG_SIZE, IMG_SIZE},
-		},
-	)
+	img := tr.newImage()
 
 	resizeImage(upperLeft, img, 0, 0)
 	resizeImage(upperRight, img, SUB_IMG_SIZE, 0)
 	resizeImage(lowerLeft, img, 0, SUB_IMG_SIZE)
 	resizeImage(lowerRight, img, SUB_IMG_SIZE, SUB_IMG_SIZE)
+	tr.releaseImage(quads.UpperLeft, upperLeft)
+	tr.releaseImage(quads.UpperRight, upperRight)
+	tr.releaseImage(quads.LowerLeft, lowerLeft)
+	tr.releaseImage(quads.LowerRight, lowerRight)
 
 	t = time.Now()
 	quadresize := t.Sub(start)

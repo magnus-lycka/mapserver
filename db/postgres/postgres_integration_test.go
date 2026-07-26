@@ -10,6 +10,17 @@ import (
 	"time"
 )
 
+func TestNewBoundsConnectionPool(t *testing.T) {
+	a, err := New("host=127.0.0.1 dbname=unused")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { a.db.Close() })
+	if got := a.db.Stats().MaxOpenConnections; got != maxOpenConnections {
+		t.Fatalf("MaxOpenConnections = %d, want %d", got, maxOpenConnections)
+	}
+}
+
 func newIntegrationAccessor(t *testing.T) *PostgresAccessor {
 	t.Helper()
 	dsn := os.Getenv("MAPSERVER_TEST_POSTGRES_DSN")

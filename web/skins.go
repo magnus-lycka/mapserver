@@ -4,24 +4,18 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
 func (api *Api) GetSkin(resp http.ResponseWriter, req *http.Request) {
 	filename := strings.TrimPrefix(req.URL.Path, "/api/skins/")
-	// there should be no remaining path elements - abort if there are any - prevent escaping into FS
-	if strings.Contains(filename, "/") {
+	if !validSkinFilename(filename) {
 		resp.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	// we should only be serving PNG images
-	if !strings.HasSuffix(filename, ".png") {
-		resp.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	filePath := api.Context.Config.Skins.SkinsPath + "/" + filename
+	filePath := filepath.Join(api.Context.Config.Skins.SkinsPath, filename)
 
 	content, err := os.ReadFile(filePath)
 	// make file not found more sensible
@@ -35,12 +29,21 @@ func (api *Api) GetSkin(resp http.ResponseWriter, req *http.Request) {
 
 	// return the file content when available
 	if content != nil {
-		resp.Write(content)
-		resp.Header().Add("content-type", "image/png")
+		resp.Header().Set("Content-Type", "image/png")
+		_, _ = resp.Write(content)
 		return
 	}
 
 	// fallback
 	resp.WriteHeader(http.StatusNotFound)
-	resp.Write([]byte(filename))
+	_, _ = resp.Write([]byte(filename))
+}
+
+func validSkinFilename(filename string) bool {
+	// A skin is one file directly below SkinsPath. Check both separator styles so
+	// the validation remains safe when mapserver is built for another platform.
+	return filename != "" &&
+		!strings.ContainsAny(filename, `/\`) &&
+		filename != "." && filename != ".." &&
+		strings.HasSuffix(strings.ToLower(filename), ".png")
 }

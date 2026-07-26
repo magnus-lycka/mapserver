@@ -19,6 +19,8 @@ type PostgresAccessor struct {
 	lastWatermarkWarning   time.Time
 }
 
+const maxOpenConnections = 16
+
 //go:embed migrations/*.sql
 var migrations embed.FS
 
@@ -242,6 +244,12 @@ func New(connStr string) (*PostgresAccessor, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Renderer workers issue concurrent point reads. Bound and retain the pool:
+	// an unlimited pool can churn through local TCP ports during a large
+	// incremental backlog, while one connection per worker still leaves room
+	// for the cursor and watermark queries.
+	db.SetMaxOpenConns(maxOpenConnections)
+	db.SetMaxIdleConns(maxOpenConnections)
 
 	sq := &PostgresAccessor{db: db}
 	return sq, nil
