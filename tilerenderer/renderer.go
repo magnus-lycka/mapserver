@@ -157,9 +157,6 @@ func (tr *TileRenderer) renderImage(tc *coords.TileCoords, recursionDepth int) (
 			return nil, nil
 		}
 
-		buf := new(bytes.Buffer)
-		png.Encode(buf, img)
-
 		return img, nil
 	}
 

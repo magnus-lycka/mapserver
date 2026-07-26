@@ -45,6 +45,22 @@ func TestSimpleAccess(t *testing.T) {
 	}
 }
 
+func TestPrepareCacheForBatchEvictsOnlyBeforeBatch(t *testing.T) {
+	cache := NewMapBlockAccessor(nil, time.Minute, time.Minute, 3)
+	cache.blockcache.SetDefault("old-1", struct{}{})
+	cache.blockcache.SetDefault("old-2", struct{}{})
+
+	cache.prepareCacheForBatch(1)
+	if got := cache.blockcache.ItemCount(); got != 2 {
+		t.Fatalf("cache was flushed at the configured boundary: got %d items", got)
+	}
+
+	cache.prepareCacheForBatch(2)
+	if got := cache.blockcache.ItemCount(); got != 0 {
+		t.Fatalf("old working set was not flushed before oversized batch: got %d items", got)
+	}
+}
+
 func TestFindMapBlocksAdvancesRawCursorWhenLayerFiltersEverything(t *testing.T) {
 	tmpfile, err := os.CreateTemp("", "TestFilteredIncremental.*.sqlite")
 	if err != nil {

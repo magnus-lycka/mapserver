@@ -16,7 +16,7 @@ import (
 
 type MapBlockRenderer struct {
 	accessor           *mapblockaccessor.MapBlockAccessor
-	colors             *colormapping.ColorMapping
+	colors             *cachedColorResolver
 	enableShadow       bool
 	enableTransparency bool
 }
@@ -24,7 +24,7 @@ type MapBlockRenderer struct {
 func NewMapBlockRenderer(accessor *mapblockaccessor.MapBlockAccessor, colors *colormapping.ColorMapping) *MapBlockRenderer {
 	return &MapBlockRenderer{
 		accessor:           accessor,
-		colors:             colors,
+		colors:             newCachedColorResolver(colors),
 		enableShadow:       true,
 		enableTransparency: false,
 	}
@@ -93,9 +93,9 @@ func (r *MapBlockRenderer) Render(pos1, pos2 *types.MapBlockCoords) (*image.NRGB
 		log.WithFields(logrus.Fields{"elapsed": elapsed}).Debug("Rendering completed")
 	}()
 
-	upLeft := image.Point{0, 0}
-	lowRight := image.Point{IMG_SIZE, IMG_SIZE}
-	img := image.NewNRGBA(image.Rectangle{upLeft, lowRight})
+	// Most mapblock columns queried while building parent tiles are empty. Delay
+	// allocating and clearing the 256x256 image until a visible node is found.
+	var img *image.NRGBA
 
 	maxY := pos1.Y
 	minY := pos2.Y
@@ -136,13 +136,17 @@ func (r *MapBlockRenderer) Render(pos1, pos2 *types.MapBlockCoords) (*image.NRGB
 						continue
 					}
 
-					c := r.colors.GetColor(nodeName, param2)
+					c, found := r.colors.getColor(nodeName, param2)
 
-					if c == nil {
+					if !found {
 						continue
 					}
 
-					// clamp alpha channel to max
+					if img == nil {
+						img = image.NewNRGBA(image.Rect(0, 0, IMG_SIZE, IMG_SIZE))
+					}
+
+					// Work on the cached value copy; ColorMapping owns its pointers.
 					c.A = 255
 
 					if r.enableShadow {
@@ -190,22 +194,22 @@ func (r *MapBlockRenderer) Render(pos1, pos2 *types.MapBlockCoords) (*image.NRGB
 
 						if IsViewBlocking(leftAbove) {
 							//add shadow
-							c = addColorComponent(c, -10)
+							c = *addColorComponent(&c, -10)
 						}
 
 						if IsViewBlocking(topAbove) {
 							//add shadow
-							c = addColorComponent(c, -10)
+							c = *addColorComponent(&c, -10)
 						}
 
 						if !IsViewBlocking(left) {
 							//add light
-							c = addColorComponent(c, 10)
+							c = *addColorComponent(&c, 10)
 						}
 
 						if !IsViewBlocking(top) {
 							//add light
-							c = addColorComponent(c, 10)
+							c = *addColorComponent(&c, 10)
 						}
 					}
 

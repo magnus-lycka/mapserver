@@ -8,7 +8,6 @@ import (
 	"github.com/minetest-go/mapparser"
 	cache "github.com/patrickmn/go-cache"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/sirupsen/logrus"
 )
 
 var lock = &sync.RWMutex{}
@@ -19,18 +18,9 @@ func (a *MapBlockAccessor) GetMapBlock(pos *types.MapBlockCoords) (*mapparser.Ma
 
 	if cache_enabled {
 
-		//maintenance
+		// Report cache size here, but never evict an active initial-render batch.
+		// Batch loading makes room before inserting its working set.
 		cacheBlocks.Set(float64(a.blockcache.ItemCount()))
-		if a.blockcache.ItemCount() > a.maxcount {
-			//flush cache
-			fields := logrus.Fields{
-				"cached items": a.blockcache.ItemCount(),
-				"maxcount":     a.maxcount,
-			}
-			logrus.WithFields(fields).Debug("Flushing cache")
-
-			a.blockcache.Flush()
-		}
 
 		//read section
 		lock.RLock()

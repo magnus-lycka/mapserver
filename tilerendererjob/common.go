@@ -15,11 +15,15 @@ func getTileKey(tc *coords.TileCoords) string {
 }
 
 func renderMapblocks(ctx *app.App, mblist []*types.ParsedMapblock) int {
+	return renderMapblocksToZoom(ctx, mblist, 1)
+}
+
+func renderMapblocksToZoom(ctx *app.App, mblist []*types.ParsedMapblock, minZoom int) int {
 	tileRenderedMap := make(map[string]bool)
 	tilecount := 0
 	totalRenderedMapblocks.Add(float64(len(mblist)))
 
-	for i := 12; i >= 1; i-- {
+	for i := 12; i >= minZoom; i-- {
 
 		//Spin up workers
 		jobs := make(chan *coords.TileCoords, ctx.Config.RenderingQueue)
@@ -84,4 +88,45 @@ func renderMapblocks(ctx *app.App, mblist []*types.ParsedMapblock) int {
 	}
 
 	return tilecount
+}
+
+func renderTiles(ctx *app.App, tiles []*coords.TileCoords) {
+	jobs := make(chan *coords.TileCoords, ctx.Config.RenderingQueue)
+	done := make(chan bool, 1)
+
+	for j := 0; j < ctx.Config.RenderingJobs; j++ {
+		go worker(ctx, jobs, done)
+	}
+	for _, tc := range tiles {
+		jobs <- tc
+	}
+	close(jobs)
+	for j := 0; j < ctx.Config.RenderingJobs; j++ {
+		<-done
+	}
+}
+
+func renderInitialParentTiles(ctx *app.App) error {
+	for _, layer := range ctx.Config.Layers {
+		children, err := ctx.TileDB.ListTiles(layer.Id, 9)
+		if err != nil {
+			return err
+		}
+
+		for zoom := 8; zoom >= 1; zoom-- {
+			parentsByKey := make(map[string]*coords.TileCoords)
+			for _, child := range children {
+				parent := child.ZoomOut(1)
+				parentsByKey[getTileKey(parent)] = parent
+			}
+
+			parents := make([]*coords.TileCoords, 0, len(parentsByKey))
+			for _, parent := range parentsByKey {
+				parents = append(parents, parent)
+			}
+			renderTiles(ctx, parents)
+			children = parents
+		}
+	}
+	return nil
 }

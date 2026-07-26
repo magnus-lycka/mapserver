@@ -18,6 +18,23 @@ type FindNextLegacyBlocksResult struct {
 	LastMtime       int64
 }
 
+func (a *MapBlockAccessor) prepareCacheForBatch(incomingItems int) {
+	if a.maxcount <= 0 {
+		return
+	}
+	cachedItems := a.blockcache.ItemCount()
+	if cachedItems == 0 || cachedItems+incomingItems <= a.maxcount {
+		return
+	}
+	fields := logrus.Fields{
+		"cached items":   cachedItems,
+		"incoming items": incomingItems,
+		"maxcount":       a.maxcount,
+	}
+	logrus.WithFields(fields).Debug("Flushing cache before batch")
+	a.blockcache.Flush()
+}
+
 func (a *MapBlockAccessor) FindNextLegacyBlocks(s settings.Settings, layers []*types.Layer, limit int) (*FindNextLegacyBlocksResult, error) {
 
 	nextResult, err := a.accessor.FindNextInitialBlocks(s, layers, limit)
@@ -28,6 +45,9 @@ func (a *MapBlockAccessor) FindNextLegacyBlocks(s settings.Settings, layers []*t
 
 	blocks := nextResult.List
 	result := FindNextLegacyBlocksResult{}
+
+	// Keep the incoming spatial batch resident until it has been rendered.
+	a.prepareCacheForBatch(len(blocks))
 
 	mblist := make([]*types.ParsedMapblock, 0)
 	result.HasMore = nextResult.HasMore
@@ -61,8 +81,10 @@ func (a *MapBlockAccessor) FindNextLegacyBlocks(s settings.Settings, layers []*t
 
 		a.Eventbus.Emit(eventbus.MAPBLOCK_RENDERED, types.NewParsedMapblock(mapblock, block.Pos))
 
-		a.blockcache.Set(key, mapblock, cache.DefaultExpiration)
-		cacheBlockCount.Inc()
+		if a.maxcount > 0 {
+			a.blockcache.Set(key, mapblock, cache.DefaultExpiration)
+			cacheBlockCount.Inc()
+		}
 		mblist = append(mblist, types.NewParsedMapblock(mapblock, block.Pos))
 
 	}
